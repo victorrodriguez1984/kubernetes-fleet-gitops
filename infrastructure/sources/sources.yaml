@@ -1,0 +1,38 @@
+# External sources (not yet defined) - NOT the app catalog.
+#
+# This is different from apps/base/, which IS the catalog of deployable apps.
+# This file only holds Flux "Source" resources (where things come FROM),
+# defined ONCE and referenced by any group/profile overlay under
+# apps/overlays/<group>/ or infrastructure/overlays/<group>/, without
+# duplicating definitions per group.
+#
+# Depending on what the external catalog turns out to be, this will contain
+# one or more of:
+#
+#   - HelmRepository   (Helm chart repos, e.g. external-secrets.io, jetstack)
+#   - GitRepository    (another git repo, e.g. a shared platform-team catalog)
+#   - OCIRepository    (OCI artifacts / packaged charts or manifests)
+#
+# Example (HelmRepository):
+#
+# apiVersion: source.toolkit.fluxcd.io/v1
+# kind: HelmRepository
+# metadata:
+#   name: external-secrets
+#   namespace: flux-kpc
+# spec:
+#   interval: 1h
+#   url: https://charts.external-secrets.io
+#
+# Example (GitRepository):
+#
+# apiVersion: source.toolkit.fluxcd.io/v1
+# kind: GitRepository
+# metadata:
+#   name: platform-catalog
+#   namespace: flux-kpc
+# spec:
+#   interval: 10m
+#   url: https://github.com/<org>/<external-catalog-repo>
+#   ref:
+#     branch: main

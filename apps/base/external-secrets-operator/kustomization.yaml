@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# PLACEHOLDER - External Secrets Operator is not defined yet.
+#
+# Not referenced from any apps/overlays/<group>/kustomization.yaml until
+# it's filled in, so it has no effect on any cluster today.
+#
+# When ready, this will likely need:
+#   1. A HelmRepository source (e.g. infrastructure/sources/helmrepo-external-secrets.yaml)
+#      pointing at https://charts.external-secrets.io
+#   2. A HelmRelease here referencing that source (sourceRef: HelmRepository/external-secrets)
+#   3. Add this path under the relevant apps/overlays/<group>/kustomization.yaml
+#      (e.g. control-plane and/or resource-plane) once decided which groups need it

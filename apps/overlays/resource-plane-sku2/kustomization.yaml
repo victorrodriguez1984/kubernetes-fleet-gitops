@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# "sku2" - same apps as the rest of "resource-plane" (inherited via
+# ../resource-plane), but with a higher replica count for whoami. This is
+# the concrete example of what a sku overlay is for: override just the one
+# thing that differs (replicas here; could equally be resource
+# requests/limits, storageClass, etc.) without touching apps/base/whoami
+# (the shared default, still 3 replicas for sku1 and any group/sku that
+# doesn't override it) or duplicating the whole Deployment.
+#
+# No cluster is sku2 yet (illustrative) - to use it for real, set
+# `sku: sku2` in clusters-config.yaml and point that cluster's apps.yaml
+# `path` at .../apps/overlays/resource-plane-sku2.
+resources:
+  - ../resource-plane
+
+replicas:
+  - name: whoami
+    count: 5

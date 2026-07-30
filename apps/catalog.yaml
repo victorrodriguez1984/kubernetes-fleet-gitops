@@ -1,0 +1,42 @@
+# Apps catalog index (metadata only).
+#
+# This file is NOT read by Flux or Kustomize - it has zero effect on what
+# gets deployed. It exists purely as a human-readable (and future
+# script-readable) index of everything available under apps/base/, so you
+# don't have to go spelunking through folders to know what exists.
+#
+# What actually controls deployment is still:
+#   apps/overlays/<group>/kustomization.yaml -> resources: [../../base/<name>]
+#
+# Fields:
+#   name:        must match the folder name under apps/base/<name>/
+#   status:      ready | placeholder (placeholder = folder exists but has
+#                no real resources yet, not safe to reference from an overlay)
+#   category:    free-form grouping for humans (demo, security, identity, storage...)
+#   description: one-liner of what it does
+
+apps:
+  - name: whoami
+    status: ready
+    category: demo
+    description: Minimal echo app (traefik/whoami), used to validate the full GitOps flow end-to-end
+
+  - name: podinfo
+    status: ready
+    category: demo
+    description: Reference microservice demo app with liveness/readiness probes
+
+  - name: external-secrets-operator
+    status: placeholder
+    category: security
+    description: Syncs secrets from external secret stores into Kubernetes (not defined yet, see apps/base/external-secrets-operator/kustomization.yaml)
+
+  # Discussed candidates for the control-plane group, not created yet:
+  # - name: keycloak
+  #   status: placeholder
+  #   category: identity
+  #   description: Identity provider / SSO for control-plane (hub) clusters
+  # - name: seaweedfs
+  #   status: placeholder
+  #   category: storage
+  #   description: Distributed object storage for control-plane (hub) clusters
