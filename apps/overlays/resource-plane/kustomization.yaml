@@ -12,4 +12,4 @@ kind: Kustomization
 # - external-secrets-operator: still a placeholder (apps/base/external-secrets-operator),
 #   not enabled anywhere yet - add it here once it's actually defined.
 resources:
-  - ../../base/whoami
+  - ../../base

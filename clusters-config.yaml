@@ -1,75 +1,32 @@
 # Platform Fleet POC - Clusters Configuration
-# 
-# This file controls:
-#   - Flux installation (install_flux: true/false)
-#   - Which "group" profile a cluster belongs to (infra + apps overlay) -> WHAT
-#     a cluster runs
-#   - Which branch a cluster promotes from -> WHEN a cluster picks up changes
-#   - Which top-level clusters/ folder (prod or non-prod) it lives under ->
-#     derived automatically from `environment`, see below
 #
-# The `group` field must match a folder name under:
-#   - infrastructure/overlays/<group>/
-#   - apps/overlays/<group>/
-# which is referenced from clusters/<prod|non-prod>/[cluster-name]/infrastructure.yaml
-# and apps.yaml.
+# Decision summary
+# - Single cluster inventory in one file (no per-branch inventory divergence).
+# - Branch-only promotion:
+#     - non-prod clusters track `git_ref: flux`
+#     - prod clusters track `git_ref: flux-prod`
+# - `enabled` and `install_flux` are onboarding flags for onboard-clusters.sh,
+#   not runtime rollout switches for already-bootstrapped clusters.
+# - Runtime reconciliation always follows the in-cluster GitRepository (`flux-kpc`).
 #
-# `sku` is a further profile INSIDE a group - e.g. resource-plane clusters
-# come in different sizes/hardware profiles (sku1, sku2, ...). It must match
-# a folder name under (note: FLAT, hyphenated - "<group>-<sku>", NOT
-# "<group>/<sku>" - Kustomize's loader refuses to build an overlay nested
-# inside the very directory it lists as a resource, verified empirically):
-#   - infrastructure/overlays/<group>-<sku>/
-#   - apps/overlays/<group>-<sku>/
-# which each just reference "../<group>" (the group's own overlay) plus
-# whatever sku-specific patches that profile needs (resource requests/limits,
-# replica counts via the `replicas:` transformer, storageClass, etc.) - never
-# duplicate what's common to the whole group. All resource-plane clusters
-# onboarded so far are sku1 (a pass-through, nothing differentiated yet);
-# resource-plane-sku2 exists as a worked example (higher replica count for
-# whoami) but isn't attached to any cluster yet.
-# infrastructure.yaml/apps.yaml's `path` must include the sku suffix too,
-# e.g. infrastructure/overlays/resource-plane-sku1.
+# Field semantics
+# - `group`: WHAT runs (must match overlays under infrastructure/apps).
+# - `sku`: size/profile inside a group (flat naming: <group>-<sku>, not nested).
+# - `environment`: maps cluster path automatically:
+#     - `prod` -> clusters/prod/<name>/
+#     - anything else -> clusters/non-prod/<name>/
+# - `git_ref_type`: always `branch`.
+# - `git_ref`: release channel for that cluster (`flux` or `flux-prod`).
+# - `install_flux`: keep `true` for real managed clusters by default; use `false`
+#   only for placeholders or intentionally unmanaged bootstrap.
 #
-# Promotion model: branch-only.
-#   git_ref_type is always "branch" (flux bootstrap only supports --branch,
-#   never --tag/--semver, so this is also the only ref type usable for its
-#   own self-management source - no secondary hand-authored GitRepository is
-#   needed anymore). `git_ref` is the branch name this cluster tracks:
-#     - environment: dev  -> git_ref: flux       (fast-moving, latest commit)
-#     - environment: prod -> git_ref: flux-prod  (promoted separately, only
-#       fast-forwarded/merged into when you're ready to release to prod)
-#   infrastructure.yaml/apps.yaml sourceRef always points at "flux-kpc" (the
-#   GitRepository flux bootstrap creates for itself, named after the
-#   namespace) - there is no more "fleet-source" GitRepository.
-#
-# Flux CONTROLLER version is NOT set here anymore (no more per-cluster
-#   flux_version field). It's resolved from catalog/flux.yaml by
-#   `group`: every cluster in the same group always runs the same, centrally
-#   validated Flux release - one place to bump instead of N cluster blocks.
-#   Without this indirection, `flux bootstrap` (with no --version) silently
-#   installs whatever toolkit version matches the local CLI binary - so a
-#   `brew upgrade flux` before running the script against prod would upgrade
-#   prod's Flux controllers with zero warning. See catalog/flux.yaml
-#   for the promotion workflow (bump non-prod group first, validate, then prod).
-#
-# Path convention: `environment` also decides the on-disk/on-git folder:
-#     - environment: dev/other -> clusters/non-prod/<name>/
-#     - environment: prod      -> clusters/prod/<name>/
-#   onboard-clusters.sh derives this automatically - do not add a separate
-#   path field, just set `environment` correctly.
-#
-# To add a cluster:
-#   1. Get the exact kubeconfig context name: kubectl config get-contexts
-#   2. Add entry below with install_flux: true/false, its group, environment
-#      and git_ref (flux or flux-prod, matching environment)
-#   3. Create clusters/<prod|non-prod>/[cluster-name]/ directory
-#      (infrastructure.yaml, apps.yaml, kustomization.yaml) pointing at the
-#      chosen group overlay, sourceRef.name: flux-kpc
+# Versioning
+# - Flux controller version is resolved by `group` from catalog/flux.yaml,
+#   not per-cluster in this file.
 
 clusters:
   - name: kind-dev
-    enabled: true
+    enabled: false
     environment: dev
     group: resource-plane
     sku: sku1
@@ -78,14 +35,23 @@ clusters:
     kubeconfig_context: kind-flux-fleet-poc
     install_flux: true
     flux_namespace: flux-kpc
-  - name: aks-dev
-    enabled: false
+  - name: azr-cru-0001-k01
+    enabled: true
     environment: dev
-    group: resource-plane
-    sku: sku1
+    group: control-plane
     git_ref_type: branch
     git_ref: flux
-    kubeconfig_context: aks-stocktrader-victor-test-001
+    kubeconfig_context: hub 
+    install_flux: true
+    flux_namespace: flux-kpc
+  - name: azr-dev-0011-k01
+    enabled: false
+    environment: pro
+    sku: sku1
+    group: resource-plane
+    git_ref_type: branch
+    git_ref: flux-prod
+    kubeconfig_context: nothing 
     install_flux: false
     flux_namespace: flux-kpc
 

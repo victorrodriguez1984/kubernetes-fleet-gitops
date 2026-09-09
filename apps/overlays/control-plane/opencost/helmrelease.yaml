@@ -1,0 +1,45 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: opencost
+  namespace: finops-opencost
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: opencost
+      version: "2.5.30"
+      sourceRef:
+        kind: HelmRepository
+        name: opencost
+        namespace: flux-kpc
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    opencost:
+      prometheus:
+        external:
+          enabled: true
+          url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+        internal:
+          enabled: false
+      ui:
+        enabled: true
+        port: 9090
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    persistence:
+      enabled: false
+    securityContext:
+      runAsNonRoot: false
+      fsGroup: 2000

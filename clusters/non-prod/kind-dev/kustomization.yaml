@@ -8,4 +8,4 @@ kind: Kustomization
 resources:
   - flux-kpc
   - infrastructure.yaml
-  - apps.yaml
+  - k8s-apps.yaml

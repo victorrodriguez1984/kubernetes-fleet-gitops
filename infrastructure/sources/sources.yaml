@@ -12,27 +12,25 @@
 #   - HelmRepository   (Helm chart repos, e.g. external-secrets.io, jetstack)
 #   - GitRepository    (another git repo, e.g. a shared platform-team catalog)
 #   - OCIRepository    (OCI artifacts / packaged charts or manifests)
-#
-# Example (HelmRepository):
-#
-# apiVersion: source.toolkit.fluxcd.io/v1
-# kind: HelmRepository
-# metadata:
-#   name: external-secrets
-#   namespace: flux-kpc
-# spec:
-#   interval: 1h
-#   url: https://charts.external-secrets.io
-#
-# Example (GitRepository):
-#
-# apiVersion: source.toolkit.fluxcd.io/v1
-# kind: GitRepository
-# metadata:
-#   name: platform-catalog
-#   namespace: flux-kpc
-# spec:
-#   interval: 10m
-#   url: https://github.com/<org>/<external-catalog-repo>
-#   ref:
-#     branch: main
+
+# Prometheus Helm chart repository
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-kpc
+spec:
+  interval: 1h
+  url: https://prometheus-community.github.io/helm-charts
+
+---
+
+# OpenCost Helm chart repository
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: opencost
+  namespace: flux-kpc
+spec:
+  interval: 1h
+  url: https://opencost.github.io/opencost-helm-chart

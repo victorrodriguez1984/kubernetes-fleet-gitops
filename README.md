@@ -36,37 +36,136 @@ These files are marked "DO NOT EDIT" because `flux bootstrap` regenerates them -
 
 ## Repository layout
 
+### Folder structure
+
 ```
 platform-fleet-poc/
 ├── clusters-config.yaml        # Central config: WHAT + WHEN + WHICH VERSION per cluster
-├── onboard-clusters.sh          # Reads clusters-config.yaml, runs `flux bootstrap` per cluster
-├── catalog/                     # Source of truth for "validated" - see Catalog hierarchy below
-│   ├── flux.yaml                 # kind: flux  - flux_version per group
-│   ├── podinfo.yaml               # kind: image - registry/repository/tag per group
-│   ├── whoami.yaml                 # kind: image - registry/repository/tag per group
-│   ├── promote-flux-release.sh     # git-commit-only trigger: catalog -> gotk-components.yaml
-│   └── promote-app-release.sh      # git-commit-only trigger: catalog -> apps/base/<app> images:
-├── clusters/
-│   ├── non-prod/<name>/         # kind-dev, aks-dev - flux-kpc/, infrastructure.yaml, apps.yaml
-│   └── prod/<name>/             # prod clusters (none onboarded yet)
-├── infrastructure/
-│   ├── base/                    # Full catalog: namespaces, RBAC, cluster-wide add-ons
-│   ├── overlays/{control-plane,resource-plane}/  # Which base pieces each group gets
-│   │   ├── resource-plane-sku1/  # Sizing profile: pass-through (sibling, not nested - see below)
-│   │   └── resource-plane-sku2/  # Sizing profile: worked example (higher replica count)
-│   └── sources/                 # Shared HelmRepository/GitRepository sources
-└── apps/
-    ├── base/{whoami,podinfo,external-secrets-operator}/  # Full app catalog
-    └── overlays/{control-plane,resource-plane}/           # Which apps each group gets
-        ├── resource-plane-sku1/  # Sizing profile: pass-through
-        └── resource-plane-sku2/  # Sizing profile: whoami replicas: 5
+├── onboard-clusters.sh         # Reads clusters-config.yaml, runs `flux bootstrap` per cluster
+├── catalog/                    # Source of truth for "validated" (see Catalog hierarchy below)
+│   ├── flux.yaml               # kind: flux  - Flux version per group
+│   ├── prometheus.yaml         # kind: helm  - kube-prometheus-stack chart version per group
+│   ├── opencost.yaml           # kind: helm  - OpenCost chart version per group
+│   ├── podinfo.yaml            # kind: image - Container image tag per group
+│   ├── whoami.yaml             # kind: image - Container image tag per group
+│   ├── promote-flux-release.sh # git-commit-only: catalog -> gotk-components.yaml
+│   └── promote-app-release.sh  # git-commit-only: catalog -> apps/base/<app>/images
+├── clusters/                   # Per-cluster Flux entry points (self-management folders)
+│   ├── non-prod/
+│   │   └── azr-cru-0001-k01/   # Cluster instance: declares group + sku
+│   │       ├── infrastructure.yaml  # Kustomization: points to infra/overlays/<group>-<sku>
+│   │       ├── k8s-apps.yaml        # Kustomization: points to apps/overlays/<group>-<sku>
+│   │       └── flux-kpc/            # (DO NOT EDIT) Flux self-management: gotk-*, gotk-sync.yaml
+│   └── prod/                   # prod clusters (none onboarded yet)
+├── infrastructure/             # Cluster infrastructure Kustomizations
+│   ├── base/                   # Universal layer: namespaces, RBAC, add-ons
+│   │   └── namespaces.yaml
+│   ├── overlays/               # Per-group Kustomizations
+│   │   ├── control-plane/          # Group overlay + group-specific namespaces + HelmRepositories
+│   │   │   ├── kustomization.yaml
+│   │   │   ├── namespaces.yaml
+│   │   │   └── sources/
+│   │   │       └── sources.yaml (HelmRepositories: prometheus-community, opencost)
+│   │   ├── control-plane-sku1/     # Sizing profile: pass-through to control-plane
+│   │   └── control-plane-sku2/     # Sizing profile: worked example (higher resources)
+│   └── sources/                # Shared HelmRepository/GitRepository definitions
+└── apps/                       # Application Kustomizations
+    ├── base/                   # Universal app catalog
+    │   ├── whoami/
+    │   ├── podinfo/
+    │   └── external-secrets-operator/
+    └── overlays/               # Per-group app Kustomizations
+        ├── control-plane/          # Group overlay: which apps + HelmReleases
+        │   ├── kustomization.yaml
+        │   ├── prometheus/
+        │   │   └── helmrelease.yaml  # Prometheus 90.0.0
+        │   └── opencost/
+        │       └── helmrelease.yaml  # OpenCost 2.5.30
+        ├── control-plane-sku1/     # Sizing profile: pass-through to control-plane
+        └── control-plane-sku2/     # Sizing profile: increased replicas (whoami: 5)
 ```
 
-Each `clusters/<prod|non-prod>/<name>/infrastructure.yaml` and `apps.yaml` is a Flux `Kustomization` pointing `sourceRef` at `flux-kpc` and `path` at the group+sku overlay (`infrastructure/overlays/<group>-<sku>` / `apps/overlays/<group>-<sku>`, e.g. `resource-plane-sku1`). `apps` has `dependsOn: [infrastructure]`, so apps only get applied once infra is healthy.
+### Reference flow
+
+```mermaid
+graph TD
+    A["clusters/non-prod/azr-cru-0001-k01/"] 
+    B["infrastructure.yaml"]
+    C["k8s-apps.yaml"]
+    D["overlays/control-plane/"]
+    E["overlays/control-plane/"]
+    F["base/ + sources/"]
+    G["HelmRelease: Prometheus<br/>HelmRelease: OpenCost"]
+    
+    A --> B
+    A --> C
+    B --> D
+    D --> F
+    C --> E
+    E --> G
+    C -->|dependsOn| B
+    
+    style A fill:#ff9800
+    style B fill:#2196F3
+    style C fill:#2196F3
+    style D fill:#4CAF50
+    style E fill:#4CAF50
+    style G fill:#9C27B0
+```
+
+Each cluster's `infrastructure.yaml` and `k8s-apps.yaml` Kustomizations point `sourceRef: flux-kpc` and `path:` at their group-sku overlay (`infrastructure/overlays/<group>-<sku>` / `apps/overlays/<group>-<sku>`). `k8s-apps` has `dependsOn: [infrastructure]`, so apps wait for infrastructure to be healthy before applying.
 
 ## Architecture decisions
 
+### Kustomization Dependency Graph
+
+```mermaid
+graph TD
+    A["clusters/non-prod/azr-cru-0001-k01/"] 
+    
+    A --> B["infrastructure.yaml"]
+    A --> C["k8s-apps.yaml"]
+    
+    B --> D["infrastructure/overlays/control-plane/"]
+    B --> E["infrastructure/sources/"]
+    
+    D --> F["infrastructure/base/"]
+    D --> G["kustomization.yaml<br/>resources:<br/>- ../base<br/>- ../sources"]
+    
+    E --> H["HelmRepository<br/>prometheus-community<br/>opencost"]
+    
+    C --> I["apps/overlays/control-plane/"]
+    
+    I --> J["apps/base/"]
+    I --> K["kustomization.yaml<br/>resources:<br/>- prometheus<br/>- opencost"]
+    
+    K --> L["Prometheus 90.0.0<br/>HelmRelease"]
+    K --> M["OpenCost 2.5.30<br/>HelmRelease<br/>dependsOn: infrastructure"]
+    
+    L --> N["kube-prometheus-stack"]
+    M --> N
+    
+    style A fill:#ff9800
+    style B fill:#2196F3
+    style C fill:#2196F3
+    style D fill:#4CAF50
+    style I fill:#4CAF50
+    style L fill:#9C27B0
+    style M fill:#9C27B0
+    style N fill:#f44336
+```
+
+**Flow:**
+1. **Flux reads cluster entry point** → `clusters/non-prod/azr-cru-0001-k01/`
+2. **Two independent Kustomizations:**
+   - `infrastructure.yaml` → deploys base infra + HelmRepositories
+   - `k8s-apps.yaml` → waits for infrastructure, then deploys Prometheus + OpenCost
+3. **Each points to its overlay** → which composes base + sources
+4. **HelmReleases** consume charts from HelmRepositories
+5. **OpenCost depends on Prometheus** → Flux health check waits for both Ready
+
 ### 1. `group` (control-plane / resource-plane) → WHAT a cluster runs
+
 Every cluster declares a `group` in `clusters-config.yaml`. The group name must match a folder under `infrastructure/overlays/<group>/` and `apps/overlays/<group>/`. This is pure Kustomize overlay composition - no Flux-specific magic, just "which subset of the catalog does this class of cluster get".
 
 ### 2. Promotion is branch-only → WHEN a cluster picks up changes
@@ -118,21 +217,46 @@ Every onboarded cluster (`kind-dev`, `aks-dev`, and any future one) bootstraps a
 
 **The catalog is the only place "validated" / "usable" is decided. Everything else in this repo only ever *points into* the catalog - nothing else is allowed to independently decide what version of anything is good.**
 
+### Decision tree: clusters-config → environment → group → catalog
+
 ```mermaid
-flowchart LR
-    subgraph Catalog["catalog/ (source of truth)"]
-        FC["flux.yaml\nkind: flux"]
-        PC["podinfo.yaml\nkind: image"]
-        WC["whoami.yaml\nkind: image"]
-    end
-    G["cluster group\n(control-plane / resource-plane)"]
-    FC -- "validated.&lt;group&gt;" --> G
-    PC -- "validated.&lt;group&gt;" --> G
-    WC -- "validated.&lt;group&gt;" --> G
-    G --> CC["clusters-config.yaml\n(cluster declares its group)"]
-    G --> OV["apps/overlays/&lt;group&gt;\ninfrastructure/overlays/&lt;group&gt;"]
-    CC --> OB["onboard-clusters.sh\n(bootstrap, reads catalog)"]
-    OV --> KZ["apps/base/&lt;app&gt;\nimages: transformer\n(kept in sync with catalog)"]
+graph TD
+    A["📋 clusters-config.yaml<br/>(cluster inventory)"]
+    
+    A -->|environment| B{"prod or<br/>non-prod?"}
+    B -->|non-prod| BR["🌳 git_ref: flux<br/>(testing branch)"]
+    B -->|prod| BP["🌳 git_ref: flux-prod<br/>(stable branch)"]
+    
+    A -->|group| G{"control-plane or<br/>resource-plane?"}
+    G -->|control-plane| OV1["📁 apps/overlays/control-plane/<br/>📁 infra/overlays/control-plane/"]
+    G -->|resource-plane| OV2["📁 apps/overlays/resource-plane/<br/>📁 infra/overlays/resource-plane/"]
+    
+    A -->|sku| S{"sku1 or<br/>sku2?"}
+    S -->|sku1| SK1["pass-through<br/>(no changes)"]
+    S -->|sku2| SK2["custom sizing<br/>(patches)"]
+    
+    OV1 -->|all apps read| CAT["📦 catalog/"]
+    OV2 -->|all apps read| CAT
+    
+    CAT -->|control-plane group<br/>gets these versions| CP["flux.yaml validated.control-plane: v2.9.3<br/>prometheus.yaml validated.control-plane: 2026.07.1<br/>opencost.yaml validated.control-plane: 2026.07.1<br/>podinfo.yaml validated.control-plane: v6.14.1<br/>whoami.yaml validated.control-plane: v1.11.0"]
+    
+    CAT -->|resource-plane group<br/>gets these versions| RP["flux.yaml validated.resource-plane: v2.8.0<br/>prometheus.yaml validated.resource-plane: 2026.06.1<br/>podinfo.yaml validated.resource-plane: v6.13.0<br/>whoami.yaml validated.resource-plane: v1.10.0"]
+    
+    BR -->|pulls from| NC["clusters/non-prod/<br/>azr-cru-0001-k01"]
+    BP -->|pulls from| PC["clusters/prod/<br/>[clusters here]"]
+    
+    NC --> CP
+    PC --> CP
+    
+    style A fill:#FFECB3
+    style B fill:#E1F5FE
+    style G fill:#E1F5FE
+    style S fill:#E1F5FE
+    style BR fill:#BBDEFB
+    style BP fill:#FFCCBC
+    style CAT fill:#FFF8E1
+    style CP fill:#C8E6C9
+    style RP fill:#C8E6C9
 ```
 
 Every catalog file, regardless of what it catalogues, follows the same two-part shape:
@@ -144,22 +268,76 @@ What differs between catalog files is only **`kind`** - what a release actually 
 | `kind` | Used by | What a release pins | Why |
 |---|---|---|---|
 | `flux` | [`catalog/flux.yaml`](catalog/flux.yaml) | `flux_version` + a top-level `registry`/`images` list (repository names only, no tags) | Installed via `flux install`/`flux bootstrap`, which resolves each controller's own image tag internally for the given version (4 controllers, 4 independent tags that don't match `flux_version` 1:1) - hand-pinning those tags here would drift; the resolved tags always live in the committed `gotk-components.yaml` per cluster. |
+| `helm` | [`catalog/prometheus.yaml`](catalog/prometheus.yaml), [`catalog/opencost.yaml`](catalog/opencost.yaml) | `chart_name` + `chart_version` + `chart_repo` | A `HelmRelease` + `HelmRepository` resolve the actual container image(s) internally, so pinning one separately here would be redundant - only the chart version needs pinning. Helm chart values are stored per-group in `apps/overlays/<group>/<app>/helmrelease.yaml`. |
 | `image` | [`catalog/podinfo.yaml`](catalog/podinfo.yaml), [`catalog/whoami.yaml`](catalog/whoami.yaml) | `registry` + `repository` + `tag` (or `digest`) | Plain Kubernetes `Deployment`, no Helm chart in the loop - the catalog itself is the only record of which container image is actually running. |
-| `helm` | *(none yet - reserved)* | chart `version` only | A `HelmRelease` + `HelmRepository` resolve the actual container image(s) internally, so pinning one separately here would be redundant - only the chart version needs pinning. |
 
-Nothing downstream is allowed to hardcode a version that isn't traceable back to one of these files: `clusters-config.yaml` only declares a `group`, and `onboard-clusters.sh`/`promote-*.sh` are the only code that ever reads a catalog file's `validated` pointer to resolve an actual version. This is what makes promotion an auditable, one-line-diff act instead of a hunt through raw manifests.
+### How the catalog works
 
-### Applications catalog: implemented, not just proposed
-[`catalog/podinfo.yaml`](catalog/podinfo.yaml) and [`catalog/whoami.yaml`](catalog/whoami.yaml) are real, in use today - `kind: image`, pinned to real public Docker Hub tags (`stefanprodan/podinfo:6.14.1`, `traefik/whoami:v1.11.0`), consumed by `apps/base/<app>/kustomization.yaml`'s `images:` transformer (which is what actually controls the running tag - the tag inside `deployment.yaml` itself is a placeholder Kustomize overrides). [`catalog/promote-app-release.sh <app> <group>`](catalog/promote-app-release.sh) is the same git-commit-only promotion trigger as `promote-flux-release.sh`, generalized for both `kind`s - **it's a nice-to-have convenience on top of the catalog, not the control itself**: the real control is that the catalog file is the only source of truth for the version, whether or not you use the script to edit it.
+Each catalog file (`catalog/flux.yaml`, `catalog/prometheus.yaml`, etc.) represents one **cataloged component** (system component, Helm add-on, or app image) and has this shape:
 
-**Does this scale?** Yes, for the dimension that actually matters: the number of *independently-versioned things*, not the number of clusters. One file per app/thing keeps release history in its own small, low-conflict diff, and a cluster's actual version is still just one pointer lookup (`validated.<group>`) regardless of how many clusters share that group. What this doesn't solve by itself yet - see "Future needs" below.
+```yaml
+kind: flux              # or: helm, image
+releases:
+  v2.9.3: {version: v2.9.3, ...}           # immutable historical record
+  v2.8.0: {version: v2.8.0, ...}           # older versions stay for rollback
+validated:
+  control-plane: v2.9.3                     # this group runs v2.9.3
+  resource-plane: v2.8.0                    # this group runs v2.8.0 (slower adoption)
+```
+
+- **`releases:`** — every version that has ever been a candidate (never deleted, enables rollback)
+- **`validated:`** — the only mutable pointer; maps each `group` → validated release; promotion bumps this by one line
+
+**Important**: `validated` is per-GROUP, not per-cluster. All clusters in `control-plane` run the same version. All clusters in `resource-plane` run the same version. This is what keeps versions auditable (one line in one file) and prevents version sprawl.
+
+### Catalog contents in this fleet
+
+**System (`kind: flux`)**
+- [`catalog/flux.yaml`](catalog/flux.yaml) — Flux CD controller versions (v2.9.3, v2.8.0, ...)
+
+**Helm add-ons (`kind: helm`)**
+- [`catalog/prometheus.yaml`](catalog/prometheus.yaml) — kube-prometheus-stack chart version (90.0.0, ...)
+- [`catalog/opencost.yaml`](catalog/opencost.yaml) — OpenCost chart version (2.5.30, ...)
+
+**Container images (`kind: image`)**
+- [`catalog/podinfo.yaml`](catalog/podinfo.yaml) — Podinfo image tag (v6.14.1, v6.13.0, ...)
+- [`catalog/whoami.yaml`](catalog/whoami.yaml) — Whoami image tag (v1.11.0, v1.10.0, ...)
+
+**Deployment method** (Kustomize + Helm)
+- Image apps: `apps/base/{podinfo,whoami}` → Kustomize overlays consume catalog image tags via `images:` transformer
+- Helm apps: `apps/overlays/{control-plane,resource-plane}/{prometheus,opencost}` → HelmRelease `spec.chart.spec.version` reads from catalog
+
+### How versions flow: Catalog → Branch → Cluster
+
+1. **Bump catalog** (e.g., `catalog/prometheus.yaml`)
+   ```yaml
+   validated:
+     control-plane: 2026.07.1  # ← new release, ready for testing
+   ```
+
+2. **Commit to `flux` branch** (non-prod testing)
+   - Non-prod clusters pull changes from `flux` branch
+   - Prometheus HelmRelease reconciles with new version 2026.07.1
+   - Validate that it works (status checks, dashboards, etc.)
+
+3. **Merge `flux` → `flux-prod`** (promote to prod)
+   - `git checkout flux-prod && git merge flux && git push`
+   - Prod clusters pull from `flux-prod` branch
+   - Prod Prometheus clusters upgrade to 2026.07.1
+
+4. **Rollback** (if needed)
+   - `git revert <commit>` in `flux-prod`
+   - Prod clusters automatically reconcile to previous version
+   - No manual cluster operations needed
+
+**Does this scale?** Yes, for the dimension that actually matters: the number of *independently-versioned things*, not the number of clusters. One file per app/thing keeps release history in its own small, low-conflict diff, and a cluster's actual version is still just one pointer lookup (`validated.<group>`) regardless of how many clusters share that group.
 
 ## Future needs (known gaps, out of scope for this POC/HLD)
 
 This POC intentionally stops at "enough to prove the GitOps + catalog control model end-to-end with public images". The following are real gaps for anything beyond that, called out explicitly so they aren't mistaken for oversights:
 
 - **Private registry credentials (`imagePullSecrets`)**: every image today is public (Docker Hub) - nothing in this repo pulls a secret to authenticate to a registry yet. Once a private/internal registry is in the picture, the natural extension is an optional field per `kind: image` catalog entry (e.g. `pullSecret: <k8s-secret-name>`), referenced by the app's `Deployment.spec.imagePullSecrets` (or centrally via the namespace's default `ServiceAccount`). The secret itself shouldn't be committed to Git in any form - this is exactly what the already-placeholder [`apps/base/external-secrets-operator`](apps/base/external-secrets-operator) is for (sync it from a real secret store rather than hand-creating `kubectl create secret docker-registry`), so wiring registry credentials through should piggy-back on that once it's built out, not invent a second mechanism.
-- **Helm `values` management for `kind: helm` releases**: no `HelmRelease` exists yet, but once one does, the catalog's `helm` entries will need to carry (or point at) per-group `values` overrides too, not just a chart `version` - likely `HelmRelease.spec.values` inline for small cases, or `valuesFrom` a `ConfigMap`/`Secret` per group for anything non-trivial. Not designed yet.
+- **Helm `values` management for `kind: helm` releases**: the catalog pins only `chart_version`; per-group `values` overrides live in `apps/overlays/<group>/<app>/helmrelease.yaml` (current implementation). At real scale, large multi-group deployments might benefit from a `catalog/` entry for `values` alongside chart version - not designed yet, since today's per-overlay storage is clear and conflict-free.
 - **Air-gapped / offline delivery (packaging as `.tgz` or mirroring images)**: this POC assumes clusters can reach the public internet (Docker Hub, GHCR, the Flux install source) directly. A disconnected environment would need charts packaged via `helm package` and images mirrored into a reachable registry (e.g. `skopeo`/`crane`/`helm push` to an OCI registry, or a bundling tool like Zarf/Hauler) - the catalog's `registry`/`repository` fields are exactly what such a mirroring step would need to read and rewrite, but no mirroring automation exists today.
 - **Catalog schema validation in CI**: still just an idea (see the `kind`/`releases`/`validated` shape above) - a malformed catalog file would currently fail silently or late (inside a promote script) rather than at PR time. A lightweight CI check (`yq`/JSON-schema per `kind`) should validate every `catalog/**/*.yaml` before merge.
 - **Registry-watching automation**: `releases` entries are hand-typed today. At real scale, a tool that watches the registry (Flux's own `ImageRepository`/`ImagePolicy`/`ImageUpdateAutomation` controllers, or Renovate) should propose new `releases` as PRs when a new image/chart version is published - a human should only ever move the `validated` pointer, never hand-type a tag or digest.
@@ -188,6 +366,83 @@ kubectl get gitrepositories,kustomizations -n flux-kpc -o wide   # all should be
 kubectl get pods -n flux-kpc                                     # 4 controller pods running
 flux check                                                        # controller health + version
 ```
+
+## Troubleshooting
+
+Use this order by default: run non-disruptive checks first, then controlled reconcile actions, and only then disruptive recovery actions if needed.
+
+### Non-disruptive checks
+
+```bash
+# Cluster and Flux health
+kubectl get ns
+kubectl get pods -A
+kubectl get pods -n flux-kpc
+kubectl get gitrepositories,kustomizations -n flux-kpc -o wide
+kubectl get kustomizations -n flux-kpc -o wide
+kubectl get helmreleases -A
+flux check
+
+# Object details and last errors
+kubectl describe kustomization apps -n flux-kpc | tail -30
+kubectl describe kustomization infrastructure -n flux-kpc | grep "revision:\|Applied" | head -3
+kubectl describe gitrepository flux-kpc -n flux-kpc | grep -i "commit\|revision"
+
+# Controller and workload logs
+kubectl logs -n flux-kpc deployment/kustomize-controller --tail=50 | grep -i "apps\|error"
+kubectl logs -n flux-kpc deployment/source-controller --tail=20
+kubectl logs -n finops-opencost -l app=opencost --tail=30
+
+# Helm/chart inspection (render/values only)
+helm show values opencost/opencost --version 2.5.30
+helm template opencost opencost/opencost --version 2.5.30 -n finops-opencost --values -
+
+# Git state correlation
+git log --oneline -5
+git rev-parse HEAD
+```
+
+### Controlled reconcile actions (low impact, but can trigger changes)
+
+```bash
+# Force immediate reconcile from source
+flux reconcile kustomization apps -n flux-kpc --with-source
+flux reconcile kustomization infrastructure -n flux-kpc --with-source
+
+# Restart source pull loop without deleting resources
+kubectl -n flux-kpc patch gitrepository flux-kpc -p '{"spec":{"suspend":true}}' --type merge
+kubectl -n flux-kpc patch gitrepository flux-kpc -p '{"spec":{"suspend":false}}' --type merge
+
+# Temporarily pause/resume apps reconciliation
+kubectl -n flux-kpc patch kustomization apps -p '{"spec":{"suspend":true}}' --type merge
+kubectl -n flux-kpc patch kustomization apps -p '{"spec":{"suspend":false}}' --type merge
+```
+
+### Disruptive actions (last resort)
+
+```bash
+# Deletes/recreates reconciliation objects
+kubectl delete kustomization apps -n flux-kpc
+kubectl delete kustomization apps -n flux-kpc --force --grace-period=0
+kubectl patch kustomization apps -n flux-kpc -p '{"metadata":{"finalizers":[]}}' --type merge
+
+# Helm/OpenCost direct interventions (outside desired-state flow)
+kubectl delete helmrelease opencost -n finops-opencost
+helm uninstall opencost -n finops-opencost
+helm install opencost opencost/opencost -n finops-opencost --create-namespace
+helm upgrade opencost opencost/opencost -n finops-opencost
+
+# Workload restarts / imperative patching
+kubectl delete pods -n finops-opencost --all
+kubectl patch deployment opencost -n finops-opencost --type json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/env/1/value","value":"http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"}]'
+kubectl edit deployment opencost -n finops-opencost
+```
+
+### Safety notes
+
+- Prefer Git changes + Flux reconcile over direct `kubectl edit/patch` on managed resources.
+- If you use disruptive commands, capture `kubectl get ... -o wide` and `kubectl describe ...` before/after to preserve incident context.
+- After recovery, align live state back to Git to avoid drift on next reconcile.
 
 ## Governance
 
