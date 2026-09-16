@@ -1,0 +1,84 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, flux, flux-prod]
+  pull_request:
+    branches: [main, flux, flux-prod]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gitleaks:
+    name: Secret Detection (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  detect-secrets:
+    name: Anomaly Detection (detect-secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install detect-secrets
+        run: pip install detect-secrets
+
+      - name: Run detect-secrets
+        run: detect-secrets scan --baseline .secrets.baseline --all-files
+
+      - name: Check baseline
+        if: hashFiles('.secrets.baseline') != ''
+        run: detect-secrets audit .secrets.baseline --report
+
+  file-size:
+    name: Large File Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for large files (> 5MB)
+        run: |
+          LARGE_FILES=$(find . -type f -size +5M ! -path "./.git/*" ! -path "./node_modules/*" ! -path "./.venv/*" ! -path "./venv/*" | wc -l)
+          if [ "$LARGE_FILES" -gt 0 ]; then
+            echo "❌ Found $LARGE_FILES files > 5MB:"
+            find . -type f -size +5M ! -path "./.git/*" ! -path "./node_modules/*" ! -path "./.venv/*" ! -path "./venv/*" -exec ls -lh {} \;
+            exit 1
+          fi
+          echo "✅ No large files detected"
+
+  summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [gitleaks, detect-secrets, file-size]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.gitleaks.result }}" != "success" ]; then
+            echo "❌ Gitleaks failed"
+            exit 1
+          fi
+          if [ "${{ needs.detect-secrets.result }}" != "success" ]; then
+            echo "❌ Detect-secrets failed"
+            exit 1
+          fi
+          if [ "${{ needs.file-size.result }}" != "success" ]; then
+            echo "❌ File size check failed"
+            exit 1
+          fi
+          echo "✅ All security checks passed"

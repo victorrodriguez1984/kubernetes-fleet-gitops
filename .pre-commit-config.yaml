@@ -1,0 +1,22 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks-action
+    rev: v2.3.2
+    hooks:
+      - id: gitleaks
+        stages: [pre-commit]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        stages: [pre-commit]
+
+# Local hook to check for suspicious patterns
+  - repo: local
+    hooks:
+      - id: no-large-files
+        name: Don't commit large files
+        entry: bash -c 'if (( $(find . -type f -size +5M ! -path "./.git/*" ! -path "./node_modules/*" | wc -l) > 0 )); then echo "❌ Found files > 5MB"; exit 1; fi'
+        language: system
+        stages: [pre-commit]
