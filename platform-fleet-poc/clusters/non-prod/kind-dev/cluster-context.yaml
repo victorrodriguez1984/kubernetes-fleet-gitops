@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-context
+  namespace: flux-kpc
+  labels:
+    app.kubernetes.io/name: cluster-context
+    app.kubernetes.io/component: inventory
+    app.kubernetes.io/managed-by: fluxcd
+    finops.mbcp.io/cluster-id: kind-dev
+    finops.mbcp.io/environment: non-prod
+    finops.mbcp.io/profile: resource-plane-sku1
+  annotations:
+    finops.mbcp.io/latest-change-id: pending-from-morpheus
+    finops.mbcp.io/latest-change-type: bootstrap
+    finops.mbcp.io/latest-change-date: "2026-09-09T00:00:00Z"
+data:
+  requestId: pending-from-morpheus
+  clusterId: kind-dev
+  clusterProfile: resource-plane-sku1
+  tenant: tbd
+  environment: non-prod
+  technicalOwner: tbd
+  financialAllocationRef: tbd
+  requestedWorkerCapacity: tbd
+  exceptionId: none
+  lifecycleState: active

@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-kpc
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-kpc
+  path: ./platform-fleet-poc/apps/overlays/resource-plane-sku1
+  postBuild:
+    substitute:
+      SPOKE_CLUSTER_ID: azr-dev-0055-k01
+      SPOKE_ENVIRONMENT: dev
+      HUB_PROMETHEUS_WRITE_URL: https://<PROMETHEUS_DOMAIN>/api/v1/write
+  prune: true
+  wait: true
+  dependsOn:
+    - name: infrastructure

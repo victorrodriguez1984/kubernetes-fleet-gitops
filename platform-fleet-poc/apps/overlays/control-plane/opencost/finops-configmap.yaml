@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finops-policy
+  namespace: finops-opencost
+  labels:
+    app.kubernetes.io/part-of: opencost
+    app.kubernetes.io/managed-by: fluxcd
+data:
+  policy.yaml: |
+    version: v1
+    taxonomy:
+      requestIdentity:
+        label: finops.request-id
+        source: Request ID
+        required: true
+      clusterIdentity:
+        label: finops.cluster-id
+        source: Cluster ID
+        required: true
+      consumedProfile:
+        label: finops.cluster-profile
+        source: Cluster SKU/Profile
+        required: true
+      platformContext:
+        tenantLabel: finops.tenant
+        environmentLabel: finops.environment
+        source: Tenant, Environment
+        required: true
+      accountability:
+        ownerLabel: finops.technical-owner
+        source: Technical Owner
+        required: true
+      financialContext:
+        allocationLabel: finops.financial-allocation-ref
+        source: Financial-Allocation Reference
+        required: true
+      capacityIntent:
+        requestedWorkerCapacityLabel: finops.requested-worker-capacity
+        source: Requested Worker Capacity
+        required: true
+      lifecycleGovernance:
+        exceptionIdLabel: finops.exception-id
+        lifecycleStateLabel: finops.lifecycle-state
+        source: Exception ID, Lifecycle State
+        required: true
+
+    allocationModel:
+      mode: tags-first
+      currency: EUR
+      sharedCostStrategy: proportional
+      notes:
+        - Start with tag coverage and showback.
+        - Introduce chargeback only after coverage is stable.
+
+    monetizationBacklog:
+      - id: M1
+        name: base-cluster-showback
+        status: planned
+      - id: M2
+        name: shared-services-allocation
+        status: planned

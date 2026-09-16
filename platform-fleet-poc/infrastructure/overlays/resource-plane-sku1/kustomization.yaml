@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# "sku1" is the first sizing/hardware profile within the "resource-plane"
+# group (spoke clusters). It's a pass-through today: every resource-plane
+# cluster currently onboarded (kind-dev, aks-dev) is sku1, so there is
+# nothing to differentiate yet - it just inherits everything from the
+# resource-plane group overlay below.
+#
+# NOTE ON NAMING: this lives as a SIBLING of ../resource-plane
+# (resource-plane-sku1, not resource-plane/sku1) because Kustomize's loader
+# treats "overlay nested inside the very directory it lists as a resource"
+# as a cycle and refuses to build it - verified empirically. Sku overlays
+# must be flat, hyphenated siblings under overlays/, each referencing
+# ../<group> instead of ../.
+#
+# To add a new SKU (sku2, sku3, ...): create ../resource-plane-sku2/
+# referencing ../resource-plane too, plus ONLY the sku-specific patches on
+# top (resource requests/limits, replica counts, nodeSelector/tolerations,
+# storageClass). Anything common to ALL resource-plane clusters belongs in
+# ../resource-plane/kustomization.yaml, not duplicated per sku.
+resources:
+  - ../resource-plane

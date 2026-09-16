@@ -1,0 +1,41 @@
+# App release catalog: podinfo (kind: image)
+#
+# This app is deployed as a plain Kubernetes Deployment (apps/base/podinfo),
+# not via a Helm chart/HelmRelease. That's what `kind: image` means here:
+#
+#   kind: helm  -> only a chart `version` needs pinning - the HelmRelease +
+#                  HelmRepository resolve the actual container image(s)
+#                  internally, so a separate image/registry pin here would
+#                  be redundant. (No app in this repo uses this kind yet -
+#                  reserved for the day a HelmRelease-based app/add-on is
+#                  catalogued; see catalog/promote-app-release.sh.)
+#   kind: image -> there is no Helm chart in the loop, so THIS catalog file
+#                  is the only place the actual container image is pinned,
+#                  and it must carry the full reference: registry +
+#                  repository + tag.
+#
+# registry/repository/tag are kept as separate fields (not one flat image
+# string) so a promotion script can address each part independently - e.g.
+# swap `registry` alone if this ever moves off the public registry to a
+# private mirror, without touching release history.
+#
+# "Validated" means this release has been reconciled (Kustomization
+# Ready=True) and passed liveness/readiness checks on a non-prod cluster in
+# that group - same discipline as catalog/flux.yaml. Never just
+# "someone typed a new tag".
+kind: image
+registry: docker.io # public registry today - see README "Extending the catalog pattern to applications"
+
+releases:
+  "2026.07.1":
+    repository: stefanprodan/podinfo
+    tag: "6.14.1"
+    # digest: sha256:...   # switch tag -> digest here once we want an immutable, non-floating pin
+
+# Which release each group is currently pinned to. Not deployed by any
+# overlay yet (apps/base/podinfo exists in the catalog but no
+# apps/overlays/<group> references it) - these entries model what version
+# it WOULD get once a group enables it.
+validated:
+  resource-plane: "2026.07.1"
+  control-plane: "2026.07.1"

@@ -1,0 +1,46 @@
+# Applications catalog (metadata only).
+#
+# This file documents what exists under apps/base/.
+# Flux deployment is controlled by overlays only.
+
+catalogVersion: 1
+
+apps:
+  - name: podinfo
+    status: ready
+    category: demo
+    namespace: apps
+    profiles:
+      - resource-plane-sku1
+    description: Demo workload for basic rollout/readiness validation.
+
+  - name: whoami
+    status: ready
+    category: demo
+    namespace: apps
+    profiles:
+      - resource-plane-sku1
+    description: Simple HTTP echo workload for traffic and DNS checks.
+
+  - name: prometheus-agent
+    status: ready
+    category: monitoring
+    namespace: monitoring
+    profiles:
+      - resource-plane-sku1
+    description: Prometheus Agent mode on spoke; scrape locally and remote_write to hub.
+
+  - name: opencost-promless
+    status: ready
+    category: finops
+    namespace: finops
+    profiles:
+      - resource-plane-sku1
+    description: OpenCost collector datasource on spoke (no local Prometheus dependency).
+
+  - name: external-secrets-operator
+    status: placeholder
+    category: security
+    namespace: external-secrets
+    profiles: []
+    description: Placeholder only; base folder exists but no deployable resources yet.

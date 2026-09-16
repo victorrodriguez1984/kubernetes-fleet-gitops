@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finops-external-labels
+  namespace: finops-opencost
+  labels:
+    app.kubernetes.io/part-of: opencost
+    app.kubernetes.io/managed-by: fluxcd
+data:
+  finops.cluster-id: azr-cru-0001-k01
+  finops.environment: non-prod
+  finops.cluster-profile: control-plane

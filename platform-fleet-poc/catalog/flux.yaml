@@ -1,0 +1,74 @@
+# Flux Version Catalog
+#
+# Single source of truth for which Flux release is VALIDATED (known-good) for
+# each cluster `group` (control-plane / resource-plane). This replaces a
+# per-cluster `flux_version` field in clusters-config.yaml - with N clusters
+# in the same group, bumping one line here covers all of them instead of
+# hand-editing every cluster block (and risking forgetting one).
+#
+# kind: flux - this is neither `kind: helm` nor `kind: image` (see
+# catalog/podinfo.yaml / catalog/whoami.yaml for those): Flux itself is installed by the `flux`
+# CLI (`flux bootstrap`/`flux install --export --version=X`), not by
+# pulling a Helm chart or a plain container image we pin ourselves - the
+# CLI resolves the matching component images internally for the version
+# given. That's why a `flux_version` string is the only thing this catalog
+# needs to pin, no per-release registry/repository/tag fields like the app
+# catalogs.
+kind: flux
+#
+# Minimal image visibility (so this file doesn't read as a black box): every
+# `flux_version` is a bundle of FOUR controller images, all on the same
+# public registry/repository prefix - only their individual tags change
+# (and don't match `flux_version` 1:1 - e.g. v2.9.3 bundles
+# source-controller v1.9.3, kustomize-controller v1.9.4, helm-controller
+# v1.6.3, notification-controller v1.9.2). Those per-controller tags are
+# NOT hand-maintained here (4 moving tags per release would drift/duplicate
+# what `flux install --version` already resolves authoritatively) - the
+# actual resolved tags always live in the already-committed
+# clusters/<prod|non-prod>/<name>/flux-kpc/gotk-components.yaml for that
+# cluster, or live via `flux check` / `kubectl get pods -n <namespace> -o
+# jsonpath='{.items[*].spec.containers[*].image}'`.
+registry: ghcr.io
+images:
+  - fluxcd/source-controller
+  - fluxcd/kustomize-controller
+  - fluxcd/helm-controller
+  - fluxcd/notification-controller
+#
+# A "release" is a named, validated bundle. Today it only pins a Flux
+# version, but the shape is deliberately a map so it can grow later (e.g. a
+# default set of Helm chart versions for shared infra) without another
+# clusters-config.yaml/onboard-clusters.sh schema change.
+#
+# Promotion workflow (same discipline as app promotion):
+#   1. On the `flux` branch, bump `validated.<group>` to a release already
+#      defined under `releases` (add a new release entry first if needed).
+#   2. Commit + push. Run catalog/promote-flux-release.sh <group> - this only
+#      renders the new component manifests and commits them under every
+#      cluster in that group's flux-kpc/gotk-components.yaml. It never
+#      contacts a cluster directly.
+#   3. Push. Each cluster's OWN already-running Flux self-management
+#      Kustomization (flux-kpc) picks up the change on its next reconcile and
+#      applies it - a pull-based upgrade, not a script pushing into the
+#      cluster. Nudge it immediately with:
+#        flux reconcile kustomization flux-kpc -n <namespace> --with-source
+#   4. Once validated on non-prod, merge flux -> flux-prod to promote the
+#      same release to prod groups.
+
+releases:
+  "2026.07.1":
+    flux_version: "v2.9.3"
+  "2026.07.0":
+    flux_version: "v2.9.2"
+
+# Which release each group is currently pinned to.
+#
+# "Validated" means the release listed here has already been reconciled
+# end-to-end on a non-prod (dev) cluster in this group AND passed all checks
+# there (GitRepository/Kustomization Ready=True, `flux check`, no
+# reconciliation errors) - never just "someone typed a new version". Only a
+# release that has cleared dev this way should ever be promoted to a
+# control-plane/prod group by merging `flux` -> `flux-prod`.
+validated:
+  resource-plane: "2026.07.1"
+  control-plane: "2026.07.1"

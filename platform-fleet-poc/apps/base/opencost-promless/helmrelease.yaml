@@ -1,0 +1,81 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: opencost-promless
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: opencost
+      version: "2.5.30"
+      sourceRef:
+        kind: HelmRepository
+        name: opencost
+        namespace: flux-kpc
+  install:
+    remediation:
+      retries: 3
+  values:
+    opencost:
+      exporter:
+        defaultClusterId: ""
+        extraEnv:
+          CURRENT_CLUSTER_ID_FILTER_ENABLED: "true"
+          PROM_CLUSTER_ID_LABEL: cluster_id
+          CLUSTER_ID: ${SPOKE_CLUSTER_ID}
+      prometheus:
+        external:
+          enabled: true
+          url: https://<PROMETHEUS_DOMAIN>
+        internal:
+          enabled: false
+        insecureSkipVerify: true
+      customPricing:
+        enabled: true
+        provider: custom
+        createConfigmap: true
+        configmapName: finops-pricing-model-spoke
+        costModel:
+          currencyCode: EUR
+          description: MBCP FinOps MVP baseline pricing
+          CPU: 0.04
+          RAM: 0.01
+          storage: 0.0005
+          zoneNetworkEgress: 0.01
+          regionNetworkEgress: 0.02
+          internetNetworkEgress: 0.05
+      ui:
+        enabled: false
+        port: 9090
+    persistence:
+      enabled: false
+    serviceAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9003"
+    affinity: {}
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: opencost-promless
+            patch: |
+              - op: add
+                path: /spec/template/spec/hostAliases
+                value:
+                  - ip: <HUB_LB_IP>
+                    hostnames:
+                      - <PROMETHEUS_DOMAIN>
+          - target:
+              kind: Service
+              name: opencost-promless
+            patch: |
+              - op: add
+                path: /metadata/annotations/prometheus.io~1scrape
+                value: "true"
+              - op: add
+                path: /metadata/annotations/prometheus.io~1port
+                value: "9003"
+              - op: add
+                path: /metadata/annotations/prometheus.io~1path
+                value: "/metrics"

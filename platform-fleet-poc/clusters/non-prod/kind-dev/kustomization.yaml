@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# "flux-kpc" here is Flux's own self-management folder (GitRepository +
+# Kustomization for this cluster). Flux names it after the --namespace used
+# at bootstrap time (flux_namespace in clusters-config.yaml), NOT a fixed
+# "flux-system" name - keep this in sync if that namespace ever changes.
+resources:
+  - flux-kpc
+  - infrastructure.yaml
+  - k8s-apps.yaml
+  - cluster-context.yaml

@@ -1,0 +1,151 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: prometheus-agent
+  namespace: monitoring
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: prometheus
+      version: "27.12.1"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-kpc
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    # Single Prometheus instance in Agent mode (remote_write only)
+    server:
+      # Keep server enabled: this chart's "server" is the Prometheus process.
+      # Agent mode is enabled through Prometheus flags below.
+      enabled: true
+      # Override default flags to remove TSDB-only args and run in agent mode.
+      defaultFlagsOverride:
+        - --config.file=/etc/config/prometheus.yml
+        - --web.console.libraries=/etc/prometheus/console_libraries
+        - --web.console.templates=/etc/prometheus/consoles
+        - --web.enable-lifecycle
+        - --agent
+      # No PVC in agent mode to avoid Pending PVC and reduce footprint.
+      persistentVolume:
+        enabled: false
+      # Pin DNS for hub endpoint inside this pod.
+      hostAliases:
+        - ip: "<HUB_LB_IP>"
+          hostnames:
+            - "<PROMETHEUS_DOMAIN>"
+      global:
+        external_labels:
+          cluster_id: ${SPOKE_CLUSTER_ID}
+          environment: ${SPOKE_ENVIRONMENT}
+      remoteWrite:
+        - url: ${HUB_PROMETHEUS_WRITE_URL}
+          tls_config:
+            insecure_skip_verify: true
+          queue_config:
+            max_samples_per_send: 1000
+            capacity: 5000
+          write_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'up|node_.*|container_.*|kube_.*|kubelet_.*|prometheus_remote_storage_.*|cluster_info|pod_.*|pv_.*|kubecost_.*|opencost_.*'
+              action: keep
+    serverFiles:
+      prometheus.yml:
+        rule_files: []
+        scrape_configs:
+          - job_name: prometheus
+            static_configs:
+              - targets:
+                  - localhost:9090
+
+          - job_name: kubernetes-nodes
+            scheme: https
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            kubernetes_sd_configs:
+              - role: node
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+              - target_label: __address__
+                replacement: kubernetes.default.svc:443
+              - source_labels: [__meta_kubernetes_node_name]
+                regex: (.+)
+                target_label: __metrics_path__
+                replacement: /api/v1/nodes/$1/proxy/metrics
+
+          - job_name: kubernetes-nodes-cadvisor
+            scheme: https
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            kubernetes_sd_configs:
+              - role: node
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+              - target_label: __address__
+                replacement: kubernetes.default.svc:443
+              - source_labels: [__meta_kubernetes_node_name]
+                regex: (.+)
+                target_label: __metrics_path__
+                replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+
+          - job_name: kubernetes-service-endpoints
+            honor_labels: true
+            kubernetes_sd_configs:
+              - role: endpoints
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape_slow]
+                action: drop
+                regex: true
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+                action: replace
+                target_label: __scheme__
+                regex: (https?)
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+                action: replace
+                target_label: __address__
+                regex: (.+?)(?::\d+)?;(\d+)
+                replacement: $1:$2
+              - action: labelmap
+                regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)
+                replacement: __param_$1
+              - action: labelmap
+                regex: __meta_kubernetes_service_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: namespace
+              - source_labels: [__meta_kubernetes_service_name]
+                action: replace
+                target_label: service
+              - source_labels: [__meta_kubernetes_pod_node_name]
+                action: replace
+                target_label: node
+
+    # Disable components not needed for remote_write agent behavior
+    alertmanager:
+      enabled: false
+    prometheus-node-exporter:
+      enabled: true
+    prometheus-pushgateway:
+      enabled: false
+
+    # Keep kube-state-metrics for core Kubernetes object metrics.
+    kube-state-metrics:
+      enabled: true

@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# "sku1" is the first sizing/hardware profile within the "resource-plane"
+# group (spoke clusters). It overrides whoami's replica count to 2
+# (independent of apps/base/whoami's own `replicas: 3` default) - everything
+# else is inherited from the resource-plane group overlay below.
+#
+# NOTE ON NAMING: this lives as a SIBLING of ../resource-plane
+# (resource-plane-sku1, not resource-plane/sku1) - Kustomize refuses to
+# build an overlay nested inside the very directory it lists as a resource
+# (cycle detection), verified empirically. Sku overlays must be flat,
+# hyphenated siblings under overlays/, each referencing ../<group>.
+#
+# To add a new SKU (sku2, sku3, ...): create ../resource-plane-sku2/
+# referencing ../resource-plane too, plus ONLY the sku-specific patches on
+# top (e.g. replica counts via the `replicas:` transformer). Anything common
+# to ALL resource-plane clusters belongs in
+# ../resource-plane/kustomization.yaml, not duplicated per sku.
+resources:
+  - ../resource-plane
+
+replicas:
+  - name: whoami
+    count: 2
