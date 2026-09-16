@@ -435,6 +435,13 @@ Cost dashboards, chargeback reports
 
 ---
 
+## References & Resources
+
+- **[OpenCost GitHub](https://github.com/opencost/opencost)** — Open-source cost allocation engine for Kubernetes
+- **[OneUptime Multi-Cluster Showback Blog](https://github.com/OneUptime/blog/blob/master/posts/2026-08-04-opencost-multi-cluster-showback/README.md)** — Reference implementation for federated cost attribution
+
+---
+
 ## Summary: From OpenCost to GitOps-Driven FinOps Metadata Model
 
 **Fase 1: FinOps Context (HLD)**

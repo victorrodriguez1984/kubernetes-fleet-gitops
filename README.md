@@ -9,38 +9,53 @@ Practical target:
 
 ## Key decisions
 
-1. Single cluster inventory in `clusters-config.yaml`.
+1. Single cluster inventory in `operations/clusters-config.yaml`.
 2. Promotion by branches (`flux` -> `flux-prod`), not tags.
 3. `enabled` and `install_flux` are **onboarding** flags (script), not runtime switches.
 4. At runtime, the in-cluster `GitRepository` (`flux-kpc`) is authoritative.
 5. Flux and component versions are governed from `catalog/`.
 
+## Quick Navigation
+
+- **[SETUP.md](./SETUP.md)** — Cluster onboarding & bootstrap
+- **[OBSERVABILITY.md](./OBSERVABILITY.md)** — Multi-cluster Prometheus + OpenCost + FinOps framework
+- **[SECURITY.md](../../SECURITY.md)** — Secret detection & compliance policies
+
 ## Repository structure
 
 ```text
 platform-fleet-poc/
-├── clusters-config.yaml
-├── onboard-clusters.sh
-├── catalog/
-│   ├── flux.yaml
-│   ├── prometheus.yaml
-│   ├── opencost.yaml
-│   ├── podinfo.yaml
-│   ├── whoami.yaml
-│   ├── promote-flux-release.sh
-│   └── promote-app-release.sh
-├── clusters/
+├── README.md                          # This file (architecture overview)
+├── SETUP.md                           # Cluster onboarding guide
+├── OBSERVABILITY.md                   # Multi-cluster observability & FinOps framework
+├── operations/
+│   ├── clusters-config.yaml           # Single source of truth for cluster inventory
+│   ├── scaffold-cluster-files.sh      # Generate cluster manifests
+│   ├── onboard-clusters.sh            # Bootstrap Flux on clusters
+│   └── finops/
+│       ├── export-daily-costs.sh      # Cluster-level showback export (CSV/JSON)
+│       ├── export-namespace-costs.sh  # Namespace-level showback export (CSV/JSON)
+│       └── reports/                   # Generated showback datasets
+├── catalog/                           # Validated component versions
+│   ├── flux.yaml                      # Flux controller versions per group
+│   ├── prometheus.yaml                # Prometheus versions
+│   ├── opencost.yaml                  # OpenCost versions
+│   ├── podinfo.yaml                   # Example app
+│   ├── whoami.yaml                    # Example app
+│   ├── promote-flux-release.sh        # Promote Flux versions
+│   └── promote-app-release.sh         # Promote app versions
+├── clusters/                          # Cluster-specific manifests (generated)
 │   ├── non-prod/
-│   │   ├── azr-cru-0001-k01/
-│   │   └── kind-dev/
-│   └── prod/
+│   │   ├── azr-cru-0001-k01/          # Hub cluster
+│   │   └── azr-dev-0011-k01/          # Spoke cluster
+│   └── prod/                          # (Future) prod clusters
 ├── infrastructure/
-│   ├── base/
-│   ├── overlays/
-│   └── sources/
+│   ├── base/                          # Namespaces, RBAC, HelmRepository
+│   ├── overlays/                      # Per-profile customizations
+│   └── sources/                       # Helm & Git repos
 └── apps/
-    ├── base/
-    └── overlays/
+    ├── base/                          # Catalog of potential apps
+    └── overlays/                      # Per-group/sku selections (Prometheus, OpenCost, etc.)
 ```
 
 ## Simple model (catalog -> clusters -> sku)
@@ -118,81 +133,50 @@ Operational note:
 - Changing `enabled` or `install_flux` does **not stop** reconciliation on an already-bootstrapped cluster.
 - Runtime follows whatever is configured in the in-cluster `GitRepository/flux-kpc`.
 
-## Bootstrap and day-2 operations
+## Onboarding & Operations
 
+**→ See [SETUP.md](./SETUP.md) for complete cluster onboarding guide.**
+
+Quick reference:
 ```bash
-# Initial bootstrap (onboarding)
-./platform-fleet-poc/onboard-clusters.sh
+# Scaffold cluster files (idempotent)
+./platform-fleet-poc/scaffold-cluster-files.sh
 
-# Flux state
+# Bootstrap Flux on clusters
+export GITHUB_TOKEN=<token>
+./platform-fleet-poc/operations/onboard-clusters.sh
+
+# Verify Flux status
 kubectl get gitrepositories,kustomizations -n flux-kpc -o wide
-kubectl get pods -n flux-kpc
 flux check
-
-# Manual reconcile
-flux reconcile source git flux-kpc -n flux-kpc
-flux reconcile kustomization flux-kpc -n flux-kpc --with-source
-flux reconcile kustomization infrastructure -n flux-kpc --with-source
-flux reconcile kustomization apps -n flux-kpc --with-source
 ```
 
-## How to run setup
+## FinOps & Cost Governance
 
-Use this flow for first-time onboarding or when adding a new cluster entry.
+**→ See [OBSERVABILITY.md](./OBSERVABILITY.md) for complete FinOps framework.**
 
+Daily showback exports (automatic via scripts or CronJob):
 ```bash
-# 1) export token used by flux bootstrap
-export GITHUB_TOKEN=<your_token>
+# Cluster-level cost (30d, CSV)
+./platform-fleet-poc/operations/finops/export-daily-costs.sh 30d csv
 
-# 2) run onboarding for all enabled clusters
-./platform-fleet-poc/onboard-clusters.sh
-
-# 3) or run onboarding for one cluster only
-./platform-fleet-poc/onboard-clusters.sh <cluster-name>
-
-# 4) verify
-kubectl get gitrepositories,kustomizations -n flux-kpc -o wide
-kubectl get pods -n flux-kpc
+# Namespace-level cost (hub cluster, CSV)
+./platform-fleet-poc/operations/finops/export-namespace-costs.sh 30d csv hub
 ```
 
-Notes:
-- `enabled` and `install_flux` are onboarding flags for this script.
-- For already-bootstrapped clusters, runtime reconciliation is controlled by Flux CRs in-cluster, not by rerunning setup.
+**Phase 1 (Operational):** 
+- ✅ Multi-cluster Prometheus federation (hub + spokes)
+- ✅ OpenCost multi-cluster API (`/allocation?aggregate=cluster|namespace`)
+- ✅ Cluster & namespace-level showback exports (CSV/JSON)
+- ✅ 4-layer FinOps framework (Inform → Optimize → Operate → Governance)
 
-## Version promotion
+**Phase 2 (Next):**
+- 🔲 Release gate: enforce namespace label coverage before flux-prod promotion
+- 🔲 CronJob: automated daily exports to BI storage (Azure Blob / S3)
 
-### Flux controllers
-1. Update `catalog/flux.yaml` (`validated.<group>`).
-2. Run:
-```bash
-./platform-fleet-poc/catalog/promote-flux-release.sh <group>
-```
-3. Validate in `flux`.
-4. Promote to prod with merge `flux` -> `flux-prod`.
+## Version Promotion
 
-### Cataloged apps
-For image-based apps:
-```bash
-./platform-fleet-poc/catalog/promote-app-release.sh <app> <group>
-```
-
-## How to release
-
-### Release Flux controllers
-
-```bash
-# 1) update validated.<group> in catalog/flux.yaml
-
-# 2) render + commit Flux manifest upgrade for that group
-./platform-fleet-poc/catalog/promote-flux-release.sh <group>
-
-# 3) validate on non-prod (flux branch)
-flux reconcile source git flux-kpc -n flux-kpc
-flux reconcile kustomization flux-kpc -n flux-kpc --with-source
-
-# 4) promote to prod channel
-git checkout flux-prod
-git merge --ff-only flux
+See [SETUP.md → Version promotion](./SETUP.md#version-promotion) for Flux and app release procedures
 git push
 ```
 
