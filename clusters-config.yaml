@@ -45,14 +45,24 @@ clusters:
     install_flux: true
     flux_namespace: flux-kpc
   - name: azr-dev-0011-k01
-    enabled: false
-    environment: pro
+    enabled: true
+    environment: dev
     sku: sku1
     group: resource-plane
     git_ref_type: branch
-    git_ref: flux-prod
-    kubeconfig_context: nothing 
-    install_flux: false
+    git_ref: flux
+    kubeconfig_context: spoke 
+    install_flux: true
+    flux_namespace: flux-kpc
+  - name: azr-dev-0055-k01
+    enabled: true
+    environment: dev
+    sku: sku1
+    group: resource-plane
+    git_ref_type: branch
+    git_ref: flux
+    kubeconfig_context: spoke2 
+    install_flux: true
     flux_namespace: flux-kpc
 
   # - name: aks-prod

@@ -214,50 +214,28 @@ while read -r CLUSTER_NAME; do
     CLUSTER_INFO=$(kubectl cluster-info | head -1)
     echo -e "${GREEN}✓ Connected: $CLUSTER_INFO${NC}"
 
-    # Process Flux installation if enabled - FIRST-TIME BOOTSTRAP ONLY.
-    # If Flux is already there, this script does nothing else: it is not
-    # responsible for upgrades. See catalog/promote-flux-release.sh for that.
+    # Process Flux installation if enabled
     if [ "$INSTALL_FLUX" = "true" ]; then
-        echo -e "\n${YELLOW}Checking Flux v2 installation in namespace $FLUX_NAMESPACE...${NC}"
-        FLUX_INSTALLED=$(kubectl get namespace "$FLUX_NAMESPACE" &>/dev/null && echo "true" || echo "false")
-
-        if [ "$FLUX_INSTALLED" = "true" ]; then
-            echo -e "${GREEN}✓ Flux v2 is already installed in $FLUX_NAMESPACE - nothing to do${NC}"
-            echo -e "${YELLOW}  (to upgrade it, bump catalog/flux.yaml and run catalog/promote-flux-release.sh $GROUP)${NC}"
-        else
-            # Bootstrap Flux v2 using generic git (avoids GitHub API repo-creation checks
-            # that require organization admin permissions - repo already exists).
-            # --branch is per-cluster (GIT_REF): dev clusters track "flux", prod
-            # clusters track "flux-prod" - each fully independent.
-            # --version pins the exact toolkit release to bootstrap with, resolved
-            # from catalog/flux.yaml via this cluster's `group` - decoupled
-            # from whatever `flux` CLI binary happens to be on this machine.
-            # --path is per-cluster: Flux's own GitRepository+Kustomization ("flux-kpc")
-            # will sync everything under clusters/$PATH_GROUP/$CLUSTER_NAME/ (flux-kpc
-            # itself, infrastructure.yaml and apps.yaml), standard Flux multi-cluster layout.
-            # --token-auth is required so the resulting GitRepository uses the HTTPS
-            # token for ongoing sync - without it, flux still generates an SSH deploy
-            # key for the GitRepository even though bootstrap itself used HTTPS.
-            echo -e "${YELLOW}Bootstrapping Flux $FLUX_VERSION in namespace $FLUX_NAMESPACE...${NC}"
-            if flux bootstrap git \
-                --url="$GIT_URL" \
-                --branch="$GIT_REF" \
-                --version="$FLUX_VERSION" \
-                --path="platform-fleet-poc/clusters/$PATH_GROUP/$CLUSTER_NAME" \
-                --namespace="$FLUX_NAMESPACE" \
-                --username=git \
-                --password="$GITHUB_TOKEN" \
-                --token-auth \
-                --silent; then
-                echo -e "${GREEN}✓ Flux v2 installed and bootstrapped${NC}"
-            else
-                echo -e "${RED}❌ Error installing Flux v2${NC}"
-                FAILED=$((FAILED + 1))
-                continue
-            fi
-
-            # Wait for Flux controllers
-            echo -e "${YELLOW}Waiting for Flux v2 controllers in $FLUX_NAMESPACE...${NC}"
+        echo -e "\n${YELLOW}Bootstrapping Flux $FLUX_VERSION in namespace $FLUX_NAMESPACE...${NC}"
+        
+        # Bootstrap Flux v2 using generic git
+        # --branch is per-cluster (GIT_REF): dev clusters track "flux", prod clusters track "flux-prod"
+        # --version pins the exact toolkit release to bootstrap with (from catalog/flux.yaml)
+        # --path is per-cluster: Flux syncs clusters/$PATH_GROUP/$CLUSTER_NAME/
+        # --token-auth required for HTTPS token-based sync
+        if flux bootstrap git \
+            --url="$GIT_URL" \
+            --branch="$GIT_REF" \
+            --version="$FLUX_VERSION" \
+            --path="platform-fleet-poc/clusters/$PATH_GROUP/$CLUSTER_NAME" \
+            --namespace="$FLUX_NAMESPACE" \
+            --username=git \
+            --password="$GITHUB_TOKEN" \
+            --token-auth; then
+            echo -e "${GREEN}✓ Flux v2 bootstrapped successfully${NC}"
+            
+            # Wait for Flux controllers to be ready
+            echo -e "${YELLOW}Waiting for Flux v2 controllers...${NC}"
             for i in {1..60}; do
                 SOURCE_READY=$(kubectl get deployment -n "$FLUX_NAMESPACE" source-controller -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
                 KUSTOMIZE_READY=$(kubectl get deployment -n "$FLUX_NAMESPACE" kustomize-controller -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
@@ -266,23 +244,13 @@ while read -r CLUSTER_NAME; do
                     echo -e "${GREEN}✓ Flux v2 controllers ready${NC}"
                     break
                 fi
-                if [ $i -eq 60 ]; then
-                    echo -e "${YELLOW}⚠️  Controllers still initializing (this is normal, proceeding...)${NC}"
-                fi
                 sleep 2
             done
+        else
+            echo -e "${RED}❌ Flux bootstrap failed${NC}"
+            FAILED=$((FAILED + 1))
+            continue
         fi
-
-        # Cluster resources (infrastructure + apps) are reconciled automatically by
-        # Flux itself via the GitOps Kustomizations committed under clusters/$CLUSTER_NAME/
-        # (infrastructure.yaml, apps.yaml) — no manual kubectl apply needed.
-        echo -e "\n${GREEN}✓ Flux will reconcile infrastructure + apps for $CLUSTER_NAME from git${NC}"
-
-        # Summary
-        echo -e "\n${GREEN}✅ Cluster $CLUSTER_NAME completed${NC}"
-        echo -e "${YELLOW}Next steps:${NC}"
-        echo -e "  Check Flux: ${GREEN}kubectl get kustomizations -n $FLUX_NAMESPACE${NC}"
-        echo -e "  Check resources: ${GREEN}kubectl get all -n apps${NC}"
     else
         echo -e "${YELLOW}⚠️  install_flux = false for $CLUSTER_NAME${NC}"
         echo -e "${YELLOW}Flux will not be installed on this cluster${NC}"

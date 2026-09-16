@@ -13,20 +13,106 @@ export GITHUB_TOKEN=github_pat_xxxxxxxxxxxx
 # - flux CLI (script will install if missing)
 # - yq (script will install if missing)
 
-# 3. Edit clusters-config.yaml and mark clusters with install_flux: true
+# 3. Edit clusters-config.yaml and add your clusters
 vi platform-fleet-poc/clusters-config.yaml
-
-# 4. Run the onboarding script
-chmod +x platform-fleet-poc/onboard-clusters.sh
 ```
 
-## Usage
+Real example (as added for the `spoke2` cluster):
 
-### Option 1: Local Script (Recommended - Configuration-Based)
+```yaml
+  - name: azr-dev-0055-k01     # cluster identifier - used for directory naming (clusters/<env>/<name>/)
+    enabled: true              # true to include this cluster in scaffold + onboard scripts
+    environment: dev           # "prod" -> clusters/prod/, anything else -> clusters/non-prod/
+    sku: sku1                  # resolves overlay <group>-<sku> if it exists, else falls back to <group>
+    group: resource-plane      # must match a folder under apps/overlays and infrastructure/overlays
+    git_ref_type: branch       # always "branch"
+    git_ref: flux              # "flux" for non-prod, "flux-prod" for prod
+    kubeconfig_context: spoke2 # local kubectl context name (must already exist, see prerequisites above)
+    install_flux: true         # bootstrap Flux v2 on this cluster via onboard-clusters.sh
+    flux_namespace: flux-kpc   # namespace Flux controllers/GitRepository live in
+```
 
-The script reads cluster configuration from `clusters-config.yaml` and automatically processes those with `install_flux: true`.
+> Before running the scripts below, the `kubeconfig_context` (`spoke2` here) must already
+> exist locally and point at the right AKS cluster, e.g.:
+> ```bash
+> az aks get-credentials --resource-group <rg> --name <aks-cluster-name> --overwrite-existing
+> kubectl config rename-context <aks-cluster-name> spoke2
+> ```
 
-#### 1. Configure Clusters
+## Two-Step Workflow
+
+### Step 1: Scaffold Cluster Files
+
+Creates directory structure and manifest templates from `clusters-config.yaml`. Idempotent - only creates files that are missing.
+
+```bash
+chmod +x platform-fleet-poc/scaffold-cluster-files.sh
+
+# Scaffold all enabled clusters
+./platform-fleet-poc/scaffold-cluster-files.sh
+
+# Or scaffold only one cluster
+./platform-fleet-poc/scaffold-cluster-files.sh kind-dev
+```
+
+Output:
+- Creates `clusters/prod/<cluster>/` or `clusters/non-prod/<cluster>/` (based on environment)
+- Generates: `kustomization.yaml`, `infrastructure.yaml`, `k8s-apps.yaml`, `cluster-context.yaml`
+- Does NOT touch Kubernetes cluster, does NOT commit or push - this is deliberate,
+  not an oversight (see below).
+
+**Before Step 2**: review the generated `k8s-apps.yaml` for that cluster. The
+`postBuild.substitute` block (`resource-plane*` overlays only) is filled with
+generic defaults from `clusters-config.yaml` - at minimum check/fix
+`HUB_PROMETHEUS_WRITE_URL` (the default assumes the hub is reachable on the
+cluster's own internal DNS, which is only true if this spoke shares a network
+with the hub; if not, use the hub's external endpoint, e.g.
+`https://<PROMETHEUS_DOMAIN>/api/v1/write`, same as the other spokes).
+
+Once the generated files look right, commit and push them **before** running
+`onboard-clusters.sh`:
+
+```bash
+git add platform-fleet-poc/clusters/<prod-or-non-prod>/<cluster-name>/
+git commit -m "platform-fleet-poc: scaffold <cluster-name>"
+git push
+```
+
+> Why isn't this automated by the scaffold script? Two reasons: (1) the script
+> is meant to be safely re-runnable/idempotent with zero side effects outside
+> the local filesystem - no script should silently push to a shared branch;
+> and (2) you almost always need to hand-correct at least one substituted
+> value (above) before it's fit to commit - auto-pushing right after
+> generation would commit the wrong defaults first.
+>
+> If you skip this and bootstrap anyway, Flux's root `Kustomization` (created
+> directly by `flux bootstrap`, which commits/pushes its own
+> `flux-kpc/gotk-*.yaml` files itself) will reconcile successfully but find
+> nothing else in the cluster's folder - `infrastructure` and `apps`
+> Kustomizations simply won't exist yet until you push them.
+
+### Step 2: Bootstrap Flux
+
+Installs Flux v2 controllers in clusters marked with `install_flux: true`.
+
+```bash
+chmod +x platform-fleet-poc/onboard-clusters.sh
+
+# Bootstrap Flux for all enabled clusters
+./platform-fleet-poc/onboard-clusters.sh
+
+# Or bootstrap only one cluster
+./platform-fleet-poc/onboard-clusters.sh kind-dev
+```
+
+The script:
+- ✓ Switches kubectl context
+- ✓ Verifies if Flux v2 is already installed
+- ✓ Installs flux CLI if needed
+- ✓ If `install_flux: true`: Bootstraps Flux v2 at the version from `catalog/flux.yaml`
+- ✓ Waits for Flux controllers to be ready
+
+## Configuration
 
 Edit `platform-fleet-poc/clusters-config.yaml`:
 
@@ -35,49 +121,23 @@ clusters:
   - name: kind-dev
     enabled: true
     kubeconfig_context: kind-flux-fleet-poc
-    install_flux: true          # ← Set true to install Flux
-
-  - name: aks-dev
-    enabled: false
-    kubeconfig_context: aks-stocktrader-victor-test-001
-    install_flux: false         # ← Set false to skip Flux
+    group: resource-plane
+    sku: sku1
+    environment: dev
+    install_flux: true
+    flux_namespace: flux-kpc
+    git_ref: flux
 ```
 
-**Key points**:
+**Key fields**:
 - `name`: Cluster identifier (used for directory naming)
-- `enabled`: Set to `true` to include in processing
-- `kubeconfig_context`: Exact name from `kubectl config get-contexts`
-- `install_flux`: Set to `true` ONLY if you want Flux installed
-
-**Important**: This config file ONLY controls Flux installation. Baselines and applications are managed separately in each cluster directory:
-- `clusters/[cluster-name]/baseline.yaml` → Controls which baseline version to deploy
-- `clusters/[cluster-name]/apps.yaml` → Controls which applications to deploy
-
-**To find your actual kubeconfig contexts:**
-```bash
-kubectl config get-contexts
-```
-
-#### 2. Execute
-
-```bash
-export GITHUB_TOKEN=your_token_here
-
-# Process all clusters with install_flux: true
-./platform-fleet-poc/onboard-clusters.sh
-
-# Or process only one specific cluster
-./platform-fleet-poc/onboard-clusters.sh kind-dev
-
-# Or force reinstallation
-./platform-fleet-poc/onboard-clusters.sh kind-dev --force
-```
-
-The script automatically for each enabled cluster:
-- ✓ Switches kubectl context
-- ✓ Verifies if Flux v2 is already installed
-- ✓ Installs flux CLI if needed
-- ✓ If `install_flux: true`: Installs Flux v2 using `flux bootstrap` (official method)
+- `enabled`: Set to `true` to include in scaffolding and onboarding
+- `group`: App/infra profile (`control-plane`, `resource-plane`, etc.)
+- `sku`: Size variant (`sku1`, `sku2`, ...)
+- `environment`: `prod` or anything else (maps to `clusters/prod` or `clusters/non-prod`)
+- `install_flux`: Set to `true` to bootstrap Flux
+- `flux_namespace`: Namespace for Flux controllers (defaults to `flux-kpc`)
+- `git_ref`: Branch to track (`flux` for non-prod, `flux-prod` for prod)
 - ✓ Waits for Flux v2 controllers to be ready (source-controller, kustomize-controller)
 - ✓ Applies cluster resources from `clusters/[cluster-name]/` (baselines, apps, kustomizations)
 

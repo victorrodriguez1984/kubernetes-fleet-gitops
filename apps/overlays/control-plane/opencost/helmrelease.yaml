@@ -22,6 +22,33 @@ spec:
       remediateLastFailure: true
   values:
     opencost:
+      exporter:
+        defaultClusterId: ""
+        extraEnv:
+          # Re-enabled 2026-09-16: keeping this false caused hub's OpenCost to re-export
+          # cost metrics for ALL clusters (via the shared Prometheus backend) on its own
+          # /metrics endpoint, mixed in with hub's own data and with no cluster_id label
+          # of its own — making it impossible to safely relabel in Prometheus without
+          # risking misattributing a spoke's data to the hub if that spoke's cluster_id
+          # label were ever missing. Scoping hub to its own cluster here is safer;
+          # the combined multi-cluster view lives in Grafana instead.
+          CURRENT_CLUSTER_ID_FILTER_ENABLED: "true"
+          PROM_CLUSTER_ID_LABEL: cluster_id
+          CLUSTER_ID: azr-cru-0001-k01
+      customPricing:
+        enabled: true
+        createConfigmap: true
+        configmapName: finops-pricing-model
+        provider: custom
+        costModel:
+          description: MBCP FinOps MVP baseline pricing
+          currencyCode: EUR
+          CPU: 0.04
+          RAM: 0.01
+          storage: 0.0005
+          zoneNetworkEgress: 0.01
+          regionNetworkEgress: 0.02
+          internetNetworkEgress: 0.05
       prometheus:
         external:
           enabled: true
@@ -31,9 +58,28 @@ spec:
       ui:
         enabled: true
         port: 9090
+        httpRoute:
+          enabled: true
+          parentRefs:
+            - name: pe-gatewayapi
+              namespace: gatewayapi
+          hostnames:
+            - finops.kyndemo.live
+          rules:
+            - matches:
+                - path:
+                    type: PathPrefix
+                    value: /
+              backendRefs:
+                - name: opencost
+                  port: 9090
+    external:
+      nodeLabels:
+        configMapName: finops-external-labels
+        namespace: finops-opencost
     resources:
       requests:
-        cpu: 200m
+        cpu: 300m
         memory: 256Mi
       limits:
         cpu: 500m
@@ -43,3 +89,19 @@ spec:
     securityContext:
       runAsNonRoot: false
       fsGroup: 2000
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Service
+              name: opencost
+            patch: |
+              - op: add
+                path: /metadata/annotations/prometheus.io~1scrape
+                value: "true"
+              - op: add
+                path: /metadata/annotations/prometheus.io~1port
+                value: "9003"
+              - op: add
+                path: /metadata/annotations/prometheus.io~1path
+                value: "/metrics"

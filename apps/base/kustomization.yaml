@@ -8,4 +8,6 @@ kind: Kustomization
 resources:
   - ./podinfo
   - ./whoami
+  - ./prometheus-agent
+  - ./opencost-promless
   # - ./external-secrets-operator  # commented out: not yet deployed

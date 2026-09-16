@@ -1,2 +1,0 @@
-clusterId,environment,clusterProfile,tenant,technicalOwner,financialAllocationRef,requestedWorkerCapacity,lifecycleState,requestId,exceptionId
-azr-cru-0001-k01,non-prod,control-plane,tbd,tbd,tbd,tbd,active,pending-from-morpheus,none

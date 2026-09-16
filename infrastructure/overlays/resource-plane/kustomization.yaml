@@ -9,3 +9,4 @@ kind: Kustomization
 # and list them under `resources`.
 resources:
   - ../../base
+  - ../../sources

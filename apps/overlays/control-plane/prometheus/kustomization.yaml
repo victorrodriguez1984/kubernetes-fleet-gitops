@@ -3,3 +3,5 @@ kind: Kustomization
 
 resources:
   - helmrelease.yaml
+  - dashboard-opencost-overview.yaml
+  - dashboard-opencost-namespace.yaml
