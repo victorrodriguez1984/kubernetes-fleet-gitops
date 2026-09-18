@@ -37,7 +37,7 @@ spec:
         configmapName: finops-pricing-model-spoke
         costModel:
           currencyCode: EUR
-          description: MBCP FinOps MVP baseline pricing
+          description: FinOps MVP baseline pricing
           CPU: 0.04
           RAM: 0.01
           storage: 0.0005
