@@ -99,6 +99,56 @@ graph TB
 
 This platform implements a **4-layer FinOps model** aligned with **cloud financial operations maturity**:
 
+### End-to-End FinOps Architecture
+
+```mermaid
+graph TD
+    subgraph Intake["1️⃣ ITSM REQUEST"]
+        I["Ticket / Onboarding<br/>origin of tagging metadata<br/>cluster.yaml GitOps"]
+    end
+    
+    subgraph Enforcement["2️⃣ CI/CD & GitOps ENFORCEMENT"]
+        E["GitHub Actions<br/>ArgoCD<br/>Policy checks<br/>Morpheus<br/>IaC execution"]
+    end
+    
+    subgraph ControlPlane["3️⃣ CONTROL PLANE — HUB/FINOPS CLUSTER"]
+        C1["Metadata & governance<br/>cluster.yaml as canonical source"]
+        C2["Policy enforcement<br/>GitHub Actions · Argo Workflows · Morpheus"]
+        C3["Provisioning orchestration<br/>Same tooling · Terraform / Talos"]
+        C4["Observability<br/>Prometheus · Mimir<br/>OpenCost-multi-cluster backend"]
+        C5["Cost repository & Alerting<br/>Central store for exports<br/>reporting and policy alerts"]
+    end
+    
+    subgraph ResourcePlane["4️⃣ RESOURCE PLANE — SPOKE × N CLUSTERS"]
+        R1["Cluster metadata<br/>cluster.yaml · local copy"]
+        R2["OpenCost<br/>Promless or Federated Prometheus<br/>local cost calculation"]
+        R3["Without local persistence<br/>object storage or<br/>agent mode prometheus"]
+        R4["Scheduled export<br/>daily / hourly / custom"]
+    end
+    
+    subgraph Reporting["5️⃣ BI / REPORTING LAYER"]
+        B["Grafana · Power BI<br/>Apptio Cloudability<br/>Chargeback · Forecasting · FinOps<br/>customer adaptable and FinOps platform"]
+    end
+    
+    I --> E
+    E --> ControlPlane
+    ControlPlane --> ResourcePlane
+    ResourcePlane -->|OUTBOUND ONLY: Spoke pushes cost export to Hub<br/>Nothing flows back| ControlPlane
+    ControlPlane --> Reporting
+    
+    style Intake fill:#fce4ec
+    style Enforcement fill:#fce4ec
+    style ControlPlane fill:#fff3e0
+    style ResourcePlane fill:#e1f5fe
+    style Reporting fill:#f3e5f5
+```
+
+**Data Flow Note:** Spokes push cost exports (showback datasets) to hub; hub centralizes, correlates, and exposes via BI/Reporting layer. No cloud-provisioning or policy updates flow back from hub to spokes (hub is read-only from spoke perspective).
+
+---
+
+### 4-Layer Capability Maturity
+
 ```mermaid
 graph TB
     subgraph L1["Layer 1: INFORM — Cost Visibility"]
@@ -469,7 +519,7 @@ Cost dashboards, chargeback reports
 ## Summary: From OpenCost to GitOps-Driven FinOps Metadata Model
 
 **Fase 1: FinOps Context (HLD)**
-- Canonical context defined: Cluster Identity, Owner, Allocation Reference 
+- Canonical context defined: Cluster Identity, Owner, Allocation Reference per industry-standard FinOps framework
 
 **Fase 2: GitOps Reference Implementation**
 - `cluster-context.yaml`: Cluster metadata (tenant, environment, profile, lifecycle, P&L ref)
