@@ -469,7 +469,7 @@ Cost dashboards, chargeback reports
 ## Summary: From OpenCost to GitOps-Driven FinOps Metadata Model
 
 **Fase 1: FinOps Context (HLD)**
-- Canonical context defined: Cluster Identity, Owner, Allocation Reference per Kyndryl MBCP HLD v0.5
+- Canonical context defined: Cluster Identity, Owner, Allocation Reference 
 
 **Fase 2: GitOps Reference Implementation**
 - `cluster-context.yaml`: Cluster metadata (tenant, environment, profile, lifecycle, P&L ref)
